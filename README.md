@@ -219,7 +219,7 @@ The path requirement options create three useful cases. A random grid shows norm
 
 The backend selector chooses which implementation produces the result. The Racket option uses the functional implementation in `astar-implementation/astar.rkt`. The C++ option calls the concurrent implementation through `/api/generate-cpp`, compiles the C++ file when needed and returns JSON in the same shape expected by the visualizer.
 
-Insert screenshot here: show a generated grid where the final path is visible and several visited cells are highlighted. The caption should explain what color represents obstacles, visited cells, the start, the goal and the final path.
+![Visualizer Example](image.png)
 
 The visualizer helps explain what the search did, but it is not the proof that the algorithm works. A visual animation can make the behavior easier to understand, yet automated tests are still necessary because they check edge cases that may not appear in a single screenshot.
 
