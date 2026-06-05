@@ -1,10 +1,11 @@
 #lang racket
 
 ;;
-;; GRID GENERATION MODULE
-;;
-;; Generates random grids of any size for testing A* pathfinding.
-;; This allows testing without modifying code.
+;; Helper module for the visualizer and examples.
+;; The main A* implementation is in astar-implementation/astar.rkt.
+;; This file is used to create random grids for demonstration purposes.
+;; AI assistance was used to optimize and organize this helper code, which
+;; is outside the main functional A* implementation.
 ;;
 
 (provide generate-random-grid

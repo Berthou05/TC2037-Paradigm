@@ -1,10 +1,11 @@
 #lang racket
 
 ;;
-;; RESULT OUTPUT AND GRID GENERATION
-;;
-;; This module bridges the A* algorithm and the React visualizer.
-;; It can generate random grids and run A* on them.
+;; Helper module that converts A* results into JSON for the visualizer.
+;; It is not part of the core algorithm.
+;; This file exists so the React/Node visualizer can read Racket results.
+;; AI assistance was used to optimize and organize this helper code, which
+;; is outside the main functional A* implementation.
 ;;
 
 (require json
@@ -24,14 +25,14 @@
 ;;
 (define (result->jsexpr grid start goal result)
   (define base
-    (hash 'success (hash-ref result 'success)
+    (hash 'success (result-success result)
           'grid grid
           'start start
           'goal goal
-          'visited (hash-ref result 'visited)
-          'path (hash-ref result 'path)))
-  (if (hash-has-key? result 'error)
-      (hash-set base 'error (hash-ref result 'error))
+          'visited (result-visited result)
+          'path (result-path result)))
+  (if (result-error result)
+      (hash-set base 'error (result-error result))
       base))
 
 ;;
@@ -59,7 +60,7 @@
 ;;   cols: grid width
 ;;   density: obstacle density (0.0 to 1.0)
 ;;
-;; Returns: result hash with path, visited, grid info
+;; Returns: JSON-friendly hash with path, visited, grid info
 ;;
 (define (generate-and-solve rows cols density)
   (define spec (generate-grid-spec rows cols density))
@@ -68,8 +69,8 @@
   (define goal (hash-ref spec 'goal))
   (define result (a-star grid start goal))
 
-  ;; Combine grid spec with result
-  (hash-set result 'grid grid))
+  ;; Convert the simple A* result into the same JSON-friendly shape.
+  (result->jsexpr grid start goal result))
 
 ;;
 ;; Generate a random grid and write complete solution to JSON.

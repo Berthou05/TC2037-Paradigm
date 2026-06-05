@@ -1,60 +1,83 @@
 #lang racket
 
 ;;
-;; A* PATHFINDING ALGORITHM - FUNCTIONAL IMPLEMENTATION
+;; A* PATHFINDING — FUNCTIONAL IMPLEMENTATION
 ;;
-;; This file contains the core A* algorithm using functional programming.
-;; Each function transforms data (immutable) without modifying state.
-;; The algorithm finds the shortest path from start to goal in a grid
-;; while avoiding obstacles.
-;;
-;; Key concept: Treat the search as a sequence of data transformations.
-;; No objects change internally. Instead, functions return new versions
-;; of the frontier and visited lists with updated information.
+;; Finds the shortest path between two cells in a grid using the A* algorithm.
+;; Movement is restricted to four directions: up, down, left, right.
+;; Obstacles are represented as 1; free cells as 0.
 ;;
 
-(provide (struct-out node)
-         sample-grid
-         sample-start
-         sample-goal
+(provide node
+         node-position node-g node-h node-f node-parent
+         result-success result-visited result-path result-error
+         sample-grid sample-start sample-goal
          directions
-         inside-grid?
-         walkable?
-         valid-position?
+         inside-grid? walkable? valid-position?
          neighbors
          manhattan
          make-node
+         priority-queue-empty?
+         priority-queue-insert
+         priority-queue-min
+         priority-queue-remove-min
          best-node
-         remove-node
+         remove-best-node
          reconstruct-path
          a-star)
 
+;; ============================================================
+;; POSITIONS
 ;;
-;; ==================== DATA STRUCTURE ====================
-;;
+;; A position is a two-element list: (row col).
+;; ============================================================
 
-;; Node: represents one position in the A* search with scoring info.
-;;
-;; Fields:
-;;   position: [row col] - location on grid
-;;   g: real cost from start to this node
-;;   h: estimated cost from this node to goal (heuristic)
-;;   f: total estimated cost (f = g + h)
-;;   parent: previous node in path (for reconstruction)
-;;
-;; Why this structure?
-;; A* needs to compare nodes by f score and later reconstruct the path.
-;; Bundling these together keeps the algorithm focused.
-(struct node (position g h f parent) #:transparent)
+(define (position-row pos) (first pos))
+(define (position-col pos) (first (rest pos)))
 
+;; True when two positions refer to the same cell.
+(define (same-position? a b)
+  (and (= (position-row a) (position-row b))
+       (= (position-col a) (position-col b))))
+
+;; ============================================================
+;; NODES
 ;;
-;; Sample grid for testing and demonstration.
-;; 0 = free cell, 1 = obstacle.
+;; A node records one cell visited during the search.
+;; It stores: position, cost so far (g), heuristic estimate (h),
+;; total score (f = g + h), and a reference to the parent node.
+;; ============================================================
+
+(define (node position g h f parent) (list position g h f parent))
+
+(define (node-position n) (first n))
+(define (node-g n)        (first (rest n)))
+(define (node-h n)        (first (rest (rest n))))
+(define (node-f n)        (first (rest (rest (rest n)))))
+(define (node-parent n)   (first (rest (rest (rest (rest n))))))
+
+;; ============================================================
+;; RESULTS
 ;;
-;; The grid is a list of lists, where each element is 0 (walkable)
-;; or 1 (blocked). This representation works with functional programming
-;; because the grid never changes - we just read from it.
-;;
+;; The search returns a result: (success visited path error).
+;;   success — true if a path was found
+;;   visited — all cells explored, in order
+;;   path    — the shortest path from start to goal
+;;   error   — an error message string, or false
+;; ============================================================
+
+(define (result success visited path error) (list success visited path error))
+
+(define (result-success r) (first r))
+(define (result-visited r) (first (rest r)))
+(define (result-path r)    (first (rest (rest r))))
+(define (result-error r)   (first (rest (rest (rest r)))))
+
+;; ============================================================
+;; SAMPLE DATA
+;; ============================================================
+
+;; 0 = free, 1 = obstacle
 (define sample-grid
   '((0 0 0 1 0)
     (0 1 0 1 0)
@@ -62,486 +85,263 @@
     (0 0 0 1 0)))
 
 (define sample-start '(0 0))
-(define sample-goal '(2 4))
+(define sample-goal  '(2 4))
 
-;;
-;; Movement directions: up, down, left, right.
-;;
-;; Each is [row-delta col-delta]. The agent moves one step per direction.
-;; We don't include diagonals because they require a different heuristic.
-;;
-(define directions
-  '((-1 0) (1 0) (0 -1) (0 1)))
+;; The four cardinal directions as (row-delta col-delta).
+(define directions '((-1 0) (1 0) (0 -1) (0 1)))
 
-;;
-;; ==================== POSITION VALIDATION ====================
-;;
-;; Three levels of checking:
-;; 1. inside-grid?: Check if position is within bounds
-;; 2. walkable?: Check if position is not an obstacle
-;; 3. valid-position?: Both must be true
-;;
-;; Why separate them?
-;; Makes debugging easier - we know which condition failed.
-;; Also keeps each function focused on one check.
-;;
+;; ============================================================
+;; GRID ACCESS
+;; ============================================================
 
-;;
-;; Check if a position is within grid boundaries.
-;;
-;; A position is inside if both row and column are valid indices.
-;; This must be checked before reading the grid to avoid crashes.
-;;
-(define (inside-grid? grid position)
-  (define row (first position))
-  (define col (second position))
-  (and (integer? row)
-       (integer? col)
-       (not (empty? grid))
-       (>= row 0)
-       (>= col 0)
-       (< row (length grid))
-       (< col (length (first grid)))))
+;; Return the nth element of a list, or false when the index is out of bounds.
+(define (nth-element-or-false lst n)
+  (cond
+    [(or (< n 0) (empty? lst)) false]
+    [(= n 0) (first lst)]
+    [else (nth-element-or-false (rest lst) (- n 1))]))
 
-;;
-;; Check if a position is walkable (not an obstacle).
-;;
-;; Assumes position is valid (inside grid).
-;; A cell has value 0 (free) or 1 (blocked).
-;; We can only walk on 0.
-;;
-(define (walkable? grid position)
-  (and (inside-grid? grid position)
-       (= (list-ref (list-ref grid (first position)) (second position)) 0)))
+;; Return the cell value at a position, or false when the position is outside the grid.
+(define (grid-cell-at grid pos)
+  (define row (nth-element-or-false grid (position-row pos)))
+  (if row
+      (nth-element-or-false row (position-col pos))
+      false))
 
-;;
-;; Check if a position is valid for pathfinding.
-;;
-;; A position is valid if it's inside the grid AND not blocked.
-;; This is the ultimate check before adding to frontier.
-;;
-(define (valid-position? grid position)
-  (and (inside-grid? grid position)
-       (walkable? grid position)))
+;; True when the position exists inside the grid boundaries.
+(define (inside-grid? grid pos)
+  (not (equal? (grid-cell-at grid pos) false)))
 
-;;
-;; ==================== MOVEMENT AND NEIGHBORS ====================
-;;
+;; True when the cell holds no obstacle.
+(define (walkable? grid pos)
+  (equal? (grid-cell-at grid pos) 0))
 
-;;
-;; Apply a direction offset to a position to get a new position.
-;;
-;; Example: position (2,3) + direction (-1,0) = (1,3) [one step up]
-;;
-;; This is pure functional: creates a new position without changing input.
-;;
-(define (move-position position direction)
-  (list (+ (first position) (first direction))
-        (+ (second position) (second direction))))
+;; A position is valid only when it is inside the grid and walkable.
+(define (valid-position? grid pos)
+  (and (inside-grid? grid pos) (walkable? grid pos)))
 
-;;
-;; Get all valid neighboring cells from a position.
-;;
-;; Process:
-;; 1. Apply each direction to create candidate positions
-;; 2. Filter out invalid candidates (outside grid or obstacles)
-;; 3. Return only valid neighbors
-;;
-;; This is an example of functional composition:
-;; map: generate candidates
-;; filter: remove invalid ones
-;;
-;; Why this approach?
-;; Separates the "generate all moves" step from "check validity" step.
-;; Makes the logic clear: transform, then filter.
-;;
-(define (neighbors grid position)
-  (filter (lambda (candidate) (valid-position? grid candidate))
-          (map (lambda (direction) (move-position position direction))
-               directions)))
+;; ============================================================
+;; NEIGHBORS
+;; ============================================================
 
-;;
-;; ==================== HEURISTIC AND SCORING ====================
-;;
+;; Apply a direction step to a position to obtain the adjacent cell.
+(define (step-in-direction pos dir)
+  (list (+ (position-row pos) (position-row dir))
+        (+ (position-col pos) (position-col dir))))
 
+;; Return all valid neighbors reachable from pos in one step.
+(define (neighbors grid pos)
+  (define (collect-reachable-neighbors remaining-directions)
+    (cond
+      [(empty? remaining-directions) empty]
+      [(valid-position? grid (step-in-direction pos (first remaining-directions)))
+       (cons (step-in-direction pos (first remaining-directions))
+             (collect-reachable-neighbors (rest remaining-directions)))]
+      [else
+       (collect-reachable-neighbors (rest remaining-directions))]))
+  (collect-reachable-neighbors directions))
+
+;; ============================================================
+;; HEURISTIC
 ;;
-;; Manhattan distance: sum of absolute differences in rows and columns.
-;;
-;; This is the heuristic h(n) - an estimate of remaining distance to goal.
-;;
-;; Why Manhattan?
-;; - Matches our movement model (only 4 directions, no diagonals)
-;; - Never overestimates the actual shortest distance
-;; - Fast to compute (just addition and subtraction)
-;;
-;; Example: From (0,0) to (3,4)
-;; h = |0-3| + |0-4| = 3 + 4 = 7
-;;
-;; The heuristic guides A* toward the goal without guaranteeing optimality.
-;; But for 4-direction movement, it works perfectly.
-;;
+;; Manhattan distance counts how many horizontal and vertical
+;; steps separate two cells, ignoring obstacles.
+;; ============================================================
+
+;; Absolute difference between two numbers.
+(define (absolute-difference a b) (if (< a b) (- b a) (- a b)))
+
+;; Manhattan distance between two grid positions.
 (define (manhattan a b)
-  (+ (abs (- (first a) (first b)))
-     (abs (- (second a) (second b)))))
+  (+ (absolute-difference (position-row a) (position-row b))
+     (absolute-difference (position-col a) (position-col b))))
 
-;;
-;; Create a node for a position and calculate its A* scores.
-;;
-;; Inputs:
-;;   position: where this node is on the grid
-;;   g: cost from start (inherited from parent)
-;;   goal: target position (to calculate h)
-;;   parent: previous node in path (needed for reconstruction)
-;;
-;; We calculate h here because every node needs it to compute f.
-;; f = g + h is what A* uses to pick the next node.
-;;
-;; Why immutable?
-;; Creating a new node instead of modifying one.
-;; The parent node stays unchanged. This is key to functional style.
-;;
-(define (make-node position g goal parent)
-  (define h (manhattan position goal))
-  (node position g h (+ g h) parent))
+;; Build a scored node from a position, its cost so far, the goal, and its parent.
+(define (make-node pos cost-so-far goal parent)
+  (define estimated-remaining (manhattan pos goal))
+  (node pos cost-so-far estimated-remaining
+        (+ cost-so-far estimated-remaining)
+        parent))
 
+;; ============================================================
+;; PRIORITY QUEUE (leftist heap)
 ;;
-;; Compare two nodes to determine which is better for A*.
+;; Always removes the node with the lowest total score (f).
+;; Ties are broken by the lower heuristic estimate (h).
 ;;
-;; A node is "better" if:
-;; 1. Its f score is lower (primary rule)
-;; 2. If f scores tie, its h score is lower (tiebreaker)
-;;
-;; Why this tiebreaker?
-;; When f is equal, prefer nodes closer to goal (lower h).
-;; This often makes A* find the goal faster.
-;;
-;; Example:
-;; Node A: g=5, h=3, f=8
-;; Node B: g=4, h=4, f=8
-;; Both have f=8, but B is closer to goal (h=4), so B is better.
-;;
-(define (lower-score? left right)
-  (or (< (node-f left) (node-f right))
-      (and (= (node-f left) (node-f right))
-           (< (node-h left) (node-h right)))))
+;; Each heap entry: (rank search-node left-subtree right-subtree)
+;; ============================================================
 
-;;
-;; ==================== FRONTIER MANAGEMENT ====================
-;;
-;; The frontier is the "waiting list" of cells to explore.
-;; Nodes enter the frontier when discovered.
-;; Nodes leave when selected as best node.
-;;
+(define (heap-entry rank search-node left-subtree right-subtree)
+  (list rank search-node left-subtree right-subtree))
 
-;;
-;; Find the best node in the frontier.
-;;
-;; Best means: lowest f score, used as tiebreaker by lower-score?.
-;;
-;; Implementation: scan entire frontier, keep node with best score.
-;; This is O(n) per call, which is slower than priority queue,
-;; but much simpler to understand and explain.
-;;
-;; For this project, simplicity is the goal.
-;; The list-based frontier keeps the algorithm clear.
-;;
-(define (best-node frontier)
+(define (heap-rank entry)         (if (empty? entry) 0 (first entry)))
+(define (heap-search-node entry)  (first (rest entry)))
+(define (heap-left-subtree entry) (first (rest (rest entry))))
+(define (heap-right-subtree entry)(first (rest (rest (rest entry)))))
+
+;; True when search-node-a has a lower (better) score than search-node-b.
+(define (lower-total-score? search-node-a search-node-b)
+  (or (< (node-f search-node-a) (node-f search-node-b))
+      (and (= (node-f search-node-a) (node-f search-node-b))
+           (< (node-h search-node-a) (node-h search-node-b)))))
+
+;; Merge two heaps, keeping the lowest-scored node at the root.
+(define (merge-heaps heap-a heap-b)
   (cond
-    [(empty? frontier) #f]
+    [(empty? heap-a) heap-b]
+    [(empty? heap-b) heap-a]
+    [(lower-total-score? (heap-search-node heap-b) (heap-search-node heap-a))
+     (merge-heaps heap-b heap-a)]
     [else
-     (foldl (lambda (candidate best)
-              (if (lower-score? candidate best) candidate best))
-            (first frontier)
-            (rest frontier))]))
+     (define merged-right (merge-heaps (heap-right-subtree heap-a) heap-b))
+     (define left         (heap-left-subtree heap-a))
+     (if (< (heap-rank left) (heap-rank merged-right))
+         (heap-entry (+ (heap-rank left) 1)
+                     (heap-search-node heap-a) merged-right left)
+         (heap-entry (+ (heap-rank merged-right) 1)
+                     (heap-search-node heap-a) left merged-right))]))
 
-;;
-;; Remove a specific node from the frontier.
-;;
-;; Once a node is selected (best-node), it leaves frontier
-;; and enters visited. This function removes it.
-;;
-;; We use equal? to compare nodes, which checks all fields.
-;; This is safe because nodes include position and parent info.
-;;
-(define (remove-node target frontier)
-  (filter (lambda (candidate) (not (equal? candidate target))) frontier))
+(define (priority-queue-empty? queue) (empty? queue))
 
-;;
-;; Check if a list of nodes contains a certain position.
-;;
-;; Searches through nodes and compares their positions.
-;; Returns #t (true) if found, #f (false) if not.
-;;
-;; Used to:
-;; - Check if position already visited (can't re-add to frontier)
-;; - Check if position already in frontier (might improve it)
-;;
-(define (contains-position? nodes position)
-  (ormap (lambda (current) (equal? (node-position current) position)) nodes))
+;; Add a search node to the priority queue.
+(define (priority-queue-insert search-node queue)
+  (merge-heaps (heap-entry 1 search-node empty empty) queue))
 
+;; Return the search node with the lowest score, without removing it.
+(define (priority-queue-min queue)
+  (if (empty? queue) false (heap-search-node queue)))
+
+;; Remove the lowest-scored node and return the remaining queue.
+(define (priority-queue-remove-min queue)
+  (if (empty? queue)
+      empty
+      (merge-heaps (heap-left-subtree queue) (heap-right-subtree queue))))
+
+;; Aliases matching the public interface expected by tests.
+(define (best-node frontier)        (priority-queue-min frontier))
+(define (remove-best-node frontier) (priority-queue-remove-min frontier))
+
+;; ============================================================
+;; PATH RECONSTRUCTION
 ;;
-;; Find a node in a list by its position.
-;;
-;; Returns the node if found, #f if not found.
-;;
-;; Why needed?
-;; When we discover a position again, we might find a cheaper path to it.
-;; We need to locate the old node to compare costs (old g vs new g).
-;;
-(define (find-position nodes position)
+;; Each node points to its parent. Walking parent links from the
+;; goal back to the start builds the path; the accumulator keeps
+;; it in start-to-goal order.
+;; ============================================================
+
+(define (reconstruct-path goal-node)
+  (define (follow-parent-links current-node path-so-far)
+    (if current-node
+        (follow-parent-links (node-parent current-node)
+                             (cons (node-position current-node) path-so-far))
+        path-so-far))
+  (follow-parent-links goal-node empty))
+
+;; Extract only the positions from a list of search nodes.
+(define (extract-positions-from-nodes node-list)
   (cond
-    [(empty? nodes) #f]
-    [(equal? (node-position (first nodes)) position) (first nodes)]
-    [else (find-position (rest nodes) position)]))
+    [(empty? node-list) empty]
+    [else (cons (node-position (first node-list))
+                (extract-positions-from-nodes (rest node-list)))]))
 
-;;
-;; Replace a node in a list with an improved version.
-;;
-;; The new node has the same position but better (lower) g score.
-;;
-;; Process:
-;; - Go through each node in the list
-;; - If its position matches the replacement, use the replacement
-;; - Otherwise, keep the original
-;;
-;; Returns a new list (functional - doesn't modify original).
-;;
-(define (replace-position nodes replacement)
-  (map (lambda (current)
-         (if (equal? (node-position current) (node-position replacement))
-             replacement
-             current))
-       nodes))
+;; Reverse a list with an accumulator.
+(define (reverse-list values)
+  (define (walk remaining reversed)
+    (cond
+      [(empty? remaining) reversed]
+      [else (walk (rest remaining) (cons (first remaining) reversed))]))
+  (walk values empty))
 
+;; Visited nodes are stored newest-first, so reverse them before returning.
+(define (visited-positions-in-order visited-nodes)
+  (reverse-list (extract-positions-from-nodes visited-nodes)))
+
+;; ============================================================
+;; FRONTIER EXPANSION
 ;;
-;; Add a new node to frontier, or improve an existing entry.
-;;
-;; When we discover a position:
-;; 1. Check if it's already in frontier
-;; 2. If not: add it (cons to front)
-;; 3. If yes: compare g costs
-;; 4. If new path is cheaper: replace it
-;; 5. If new path is more expensive: ignore it
-;;
-;; This is important for A* correctness.
-;; Always keep the shortest known path to each position.
-;;
-;; Functional approach: return updated frontier.
-;; Original frontier unchanged (new list returned).
-;;
-(define (add-or-improve frontier candidate)
-  (define existing (find-position frontier (node-position candidate)))
+;; For each unvisited neighbor of the current node, create a new
+;; search node and add it to the frontier.
+;; ============================================================
+
+;; True when the visited list already contains a node at this position.
+(define (position-already-visited? visited-nodes pos)
   (cond
-    [(not existing) (cons candidate frontier)]
-    [(< (node-g candidate) (node-g existing))
-     (replace-position frontier candidate)]
-    [else frontier]))
+    [(empty? visited-nodes) false]
+    [(same-position? (node-position (first visited-nodes)) pos) true]
+    [else (position-already-visited? (rest visited-nodes) pos)]))
 
-;;
-;; ==================== FRONTIER EXPANSION ====================
-;;
-
-;;
-;; Generate new frontier entries from neighbors of current node.
-;;
-;; When we process a node, we look at its neighbors.
-;; For each neighbor not already visited:
-;; - Create a new node with parent = current node
-;; - Cost g = parent's g + 1 (each step costs 1)
-;; - Calculate h using Manhattan distance
-;; - Add to frontier (or improve if already there)
-;;
-;; This is the "exploration" step of A*.
-;;
-;; Functional approach: takes frontier, returns updated frontier.
-;; Original frontier is not modified.
-;;
-(define (expand-frontier grid current frontier visited goal)
-  (foldl
-   (lambda (position updated-frontier)
-     ;; Skip neighbors that are already visited
-     ;; (already processed, no need to re-add)
-     (if (contains-position? visited position)
-         updated-frontier
-         ;; For each unvisited neighbor:
-         ;; Create a new node and add it to frontier
-         ;; g = current node's g + 1 (one more step)
-         ;; parent = current node (for path reconstruction)
-         (add-or-improve
-          updated-frontier
-          (make-node position
-                     (+ (node-g current) 1)
-                     goal
-                     current))))
-   frontier
-   (neighbors grid (node-position current))))
-
-;;
-;; ==================== PATH RECONSTRUCTION ====================
-;;
-
-;;
-;; Rebuild the final path by following parent links backward from goal.
-;;
-;; When we reach the goal, each node has a parent.
-;; Following parent links backward:
-;; goal -> parent -> grandparent -> ... -> start (start has no parent)
-;;
-;; Process:
-;; 1. Start at goal node
-;; 2. Add position to path
-;; 3. Move to parent and repeat
-;; 4. Stop when no more parents (reached start)
-;; 5. Reverse to get start -> goal order
-;;
-;; Why built backward?
-;; Following parent links is natural (each node knows its parent).
-;; We cons (prepend) to build path efficiently.
-;; Then reverse to get correct order.
-;;
-;; This is an inner function (walk) for clarity.
-;; walk: collects positions as it walks the parent chain.
-;;
-(define (reconstruct-path current-node)
-  (define (walk node-so-far path-so-far)
-    (if (not node-so-far)
-        ;; No more parents: we reached the start
-        path-so-far
-        ;; Add this node's position and continue
-        (walk (node-parent node-so-far)
-              (cons (node-position node-so-far) path-so-far))))
-  (walk current-node '()))
-
-;;
-;; Convert a list of nodes to a list of positions.
-;;
-;; Why?
-;; React visualizer only needs positions for display.
-;; A* scores (g, h, f) are not needed in output.
-;; This extracts just the coordinates.
-;;
-(define (positions-of nodes)
-  (map node-position nodes))
-
-;;
-;; ==================== MAIN A* SEARCH ====================
-;;
-
-;;
-;; Recursive A* search - the core algorithm.
-;;
-;; Inputs:
-;;   grid: board to search
-;;   frontier: nodes waiting to be explored
-;;   visited: nodes already processed
-;;   goal: target position
-;;
-;; Output: hash with 'success, 'path, 'visited keys
-;;
-;; Algorithm (each recursive call is one step):
-;; 1. If frontier empty: no path exists, return failure
-;; 2. Pick best frontier node (lowest f)
-;; 3. If it's the goal: path found, reconstruct and return
-;; 4. Otherwise: generate neighbors, add to frontier, recurse
-;;
-;; Why recursive?
-;; Each A* step is identical: pick best, process, continue.
-;; Recursion naturally expresses this repetition.
-;; Base case: frontier empty (no more nodes to explore).
-;;
-;; Why return a hash?
-;; Need to return multiple values: success flag, path, visited.
-;; Hash makes this clean (key-value pairs).
-;; Receiver can extract what it needs.
-;;
-(define (a-star-search grid frontier visited goal)
+;; Insert search nodes for all unvisited neighbor positions into the frontier.
+(define (enqueue-unvisited-neighbors neighbor-positions current-node frontier visited-nodes goal)
   (cond
-    ;; CASE 1: Frontier empty
-    ;; We explored everywhere but never found the goal.
-    ;; This means no path exists.
-    [(empty? frontier)
-     (hash 'success #f
-           'visited (reverse (positions-of visited))
-           'path '())]
-
-    ;; CASE 2: Frontier not empty
-    ;; Continue searching: pick best node, process it, recurse.
+    [(empty? neighbor-positions) frontier]
+    [(position-already-visited? visited-nodes (first neighbor-positions))
+     (enqueue-unvisited-neighbors
+      (rest neighbor-positions) current-node frontier visited-nodes goal)]
     [else
-     (define current (best-node frontier))
-     (define next-frontier (remove-node current frontier))
-     (define next-visited (cons current visited))
+     (enqueue-unvisited-neighbors
+      (rest neighbor-positions)
+      current-node
+      (priority-queue-insert
+       (make-node (first neighbor-positions)
+                  (+ (node-g current-node) 1)
+                  goal
+                  current-node)
+       frontier)
+      visited-nodes
+      goal)]))
 
-     ;; Did we reach the goal?
-     (if (equal? (node-position current) goal)
-         ;; YES: goal found
-         ;; Reconstruct path by following parent links
-         (hash 'success #t
-               'visited (reverse (positions-of next-visited))
-               'path (reconstruct-path current))
+;; ============================================================
+;; A* SEARCH LOOP
+;;
+;; Each recursive call processes one node from the frontier:
+;;   1. Empty frontier → no path exists.
+;;   2. Already visited → skip and continue.
+;;   3. Goal reached → reconstruct and return the path.
+;;   4. Otherwise → expand neighbors and continue.
+;; ============================================================
 
-         ;; NO: goal not yet found
-         ;; Expand from current node and recurse
-         ;; expand-frontier generates neighbors and updates frontier
-         ;; Recursive call with updated frontier and visited
-         (a-star-search grid
-                        (expand-frontier grid current next-frontier next-visited goal)
-                        next-visited
-                        goal))]))
+(define (search-from-frontier grid frontier visited-nodes goal)
+  (cond
+    [(priority-queue-empty? frontier)
+     (result false (visited-positions-in-order visited-nodes) empty false)]
+    [else
+     (define current-node      (best-node frontier))
+     (define frontier-without-current (remove-best-node frontier))
+     (define visited-with-current     (cons current-node visited-nodes))
+     (cond
+       [(position-already-visited? visited-nodes (node-position current-node))
+        (search-from-frontier grid frontier-without-current visited-nodes goal)]
+       [(same-position? (node-position current-node) goal)
+        (result true
+                (visited-positions-in-order visited-with-current)
+                (reconstruct-path current-node)
+                false)]
+       [else
+        (search-from-frontier
+         grid
+         (enqueue-unvisited-neighbors (neighbors grid (node-position current-node))
+                                      current-node
+                                      frontier-without-current
+                                      visited-with-current
+                                      goal)
+         visited-with-current
+         goal)])]))
 
-;;
-;; ==================== PUBLIC ENTRY POINT ====================
-;;
+;; ============================================================
+;; PUBLIC ENTRY POINT
+;; ============================================================
 
-;;
-;; Find the shortest path from start to goal.
-;;
-;; This is the main function to call from outside.
-;; It validates input, initializes the search, and returns results.
-;;
-;; Input:
-;;   grid: the board (list of lists, 0=free 1=obstacle)
-;;   start: starting position [row col]
-;;   goal: goal position [row col]
-;;
-;; Output: hash with keys:
-;;   'success: #t if path found, #f otherwise
-;;   'path: list of [row col] from start to goal (empty if no path)
-;;   'visited: list of all explored positions (for visualization)
-;;   'error: (optional) error message if validation fails
-;;
-;; Validation:
-;; 1. Check start is valid (in grid, not obstacle)
-;; 2. Check goal is valid (in grid, not obstacle)
-;; 3. If both valid: initialize and search
-;; 4. If either invalid: return error without searching
-;;
-;; Why validate first?
-;; Prevents wasting computation on impossible inputs.
-;; Makes error messages clear (know which input failed).
-;;
+;; Find the shortest path from start to goal in the given grid.
+;; Returns a result record (see result-* accessors above).
 (define (a-star grid start goal)
   (cond
-    ;; Start position is invalid
     [(not (valid-position? grid start))
-     (hash 'success #f
-           'visited '()
-           'path '()
-           'error "Invalid start position")]
-
-    ;; Goal position is invalid
+     (result false empty empty "Invalid start position")]
     [(not (valid-position? grid goal))
-     (hash 'success #f
-           'visited '()
-           'path '()
-           'error "Invalid goal position")]
-
-    ;; Both valid - run the search
+     (result false empty empty "Invalid goal position")]
     [else
-     (a-star-search grid
-                    ;; Initial frontier: just the start node
-                    ;; g=0 (no cost yet, just starting)
-                    ;; parent=#f (no previous node)
-                    (list (make-node start 0 goal #f))
-                    ;; Initial visited: empty (nothing processed yet)
-                    '()
-                    goal)]))
+     (search-from-frontier grid
+                           (priority-queue-insert (make-node start 0 goal false) empty)
+                           empty
+                           goal)]))

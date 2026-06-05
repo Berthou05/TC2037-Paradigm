@@ -113,19 +113,13 @@ const PATH_MODES = [
   { label: 'Require no path', mode: 'blocked' },
 ];
 
-const BACKENDS = [
-  { label: 'Racket functional A*', backend: 'racket' },
-  { label: 'C++ concurrent A*', backend: 'cpp' },
-];
-
 function GridConfigurator({ onGenerate, isLoading }) {
   const [selectedSize, setSelectedSize] = useState(5);
   const [selectedDensity, setSelectedDensity] = useState(0.3);
   const [selectedMode, setSelectedMode] = useState('solvable');
-  const [selectedBackend, setSelectedBackend] = useState('racket');
 
   const handleGenerate = () => {
-    onGenerate(selectedSize, selectedSize, selectedDensity, selectedMode, selectedBackend);
+    onGenerate(selectedSize, selectedSize, selectedDensity, selectedMode);
   };
 
   return (
@@ -169,21 +163,6 @@ function GridConfigurator({ onGenerate, isLoading }) {
         >
           {PATH_MODES.map((item) => (
             <option key={item.mode} value={item.mode}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="config-section">
-        <h3>Backend</h3>
-        <select
-          value={selectedBackend}
-          onChange={(event) => setSelectedBackend(event.target.value)}
-          disabled={isLoading}
-        >
-          {BACKENDS.map((item) => (
-            <option key={item.backend} value={item.backend}>
               {item.label}
             </option>
           ))}
@@ -241,7 +220,7 @@ export default function App() {
     setStep(1);
   };
 
-  const handleGenerate = async (rows, cols, density, mode, backend) => {
+  const handleGenerate = async (rows, cols, density, mode) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -251,16 +230,14 @@ export default function App() {
         density,
         mode,
       });
-      const endpoint = backend === 'cpp' ? '/api/generate-cpp' : '/api/generate';
-
-      const response = await fetch(`${endpoint}?${params}`);
+      const response = await fetch(`/api/generate?${params}`);
       const data = await response.json();
 
       if (!response.ok || (data && data.error)) {
         throw new Error(data.error || 'Failed to generate grid');
       }
 
-      setCurrentResult({ ...data, backend });
+      setCurrentResult(data);
       setStep(1);
       setRunning(false);
     } catch (err) {
@@ -330,7 +307,7 @@ export default function App() {
               <div>
                 <span>Algorithm</span>
                 <strong>
-                  {currentResult.backend === 'cpp' ? 'C++ Concurrent A*' : 'Racket Functional A*'}
+                  Racket Functional A*
                 </strong>
               </div>
               <div>

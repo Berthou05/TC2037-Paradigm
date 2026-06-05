@@ -65,23 +65,6 @@ app.get('/api/generate', (req, res) => {
     });
 });
 
-app.get('/api/generate-cpp', (req, res) => {
-  const params = parseGenerationParams(req);
-  if (params.error) {
-    return res.status(400).json(params.error);
-  }
-
-  generateAndSolveCpp(params.rows, params.cols, params.density, params.mode)
-    .then((result) => res.json(result))
-    .catch((error) => {
-      console.error('C++ generation error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Error generating grid with C++: ' + error.message,
-      });
-    });
-});
-
 function parseGenerationParams(req) {
   const rows = req.query.rows === undefined ? 10 : parseInt(req.query.rows);
   const cols = req.query.cols === undefined ? 10 : parseInt(req.query.cols);
@@ -177,87 +160,6 @@ function generateAndSolve(rows, cols, density, mode) {
       ));
     });
   });
-}
-
-function runProcess(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const process = spawn(command, args, {
-      timeout: options.timeout || 15000,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: options.cwd,
-    });
-
-    let output = '';
-    let errorOutput = '';
-
-    process.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    process.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
-
-    process.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`${command} failed with code ${code}: ${errorOutput}`));
-        return;
-      }
-
-      resolve(output);
-    });
-
-    process.on('error', (error) => {
-      reject(error);
-    });
-  });
-}
-
-async function ensureCppExecutable(projectRoot) {
-  const sourcePath = join(projectRoot, 'cpp-concurrent', 'concurrent_astar.cpp');
-  const corePath = join(projectRoot, 'cpp-concurrent', 'astar_core.cpp');
-  const executablePath = join(projectRoot, 'cpp-concurrent', 'concurrent_astar.exe');
-
-  if (!fs.existsSync(sourcePath)) {
-    throw new Error(`C++ source not found: ${sourcePath}`);
-  }
-  if (!fs.existsSync(corePath)) {
-    throw new Error(`C++ A* core not found: ${corePath}`);
-  }
-
-  const shouldCompile = !fs.existsSync(executablePath)
-    || fs.statSync(sourcePath).mtimeMs > fs.statSync(executablePath).mtimeMs
-    || fs.statSync(corePath).mtimeMs > fs.statSync(executablePath).mtimeMs;
-
-  if (shouldCompile) {
-    await runProcess('g++', [
-      sourcePath,
-      corePath,
-      '-std=c++17',
-      '-pthread',
-      '-o',
-      executablePath,
-    ], { timeout: 30000 });
-  }
-
-  return executablePath;
-}
-
-async function generateAndSolveCpp(rows, cols, density, mode) {
-  const projectRoot = dirname(__dirname);
-  const executablePath = await ensureCppExecutable(projectRoot);
-  const output = await runProcess(executablePath, [
-    String(rows),
-    String(cols),
-    String(density),
-    mode,
-  ], { timeout: 15000 });
-
-  try {
-    return JSON.parse(output);
-  } catch (error) {
-    throw new Error(`Invalid C++ JSON output: ${error.message}`);
-  }
 }
 
 const server = app.listen(PORT, () => {

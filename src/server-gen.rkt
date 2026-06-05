@@ -1,13 +1,12 @@
 #lang racket
 
 ;;
-;; SERVER-SIDE GRID GENERATION AND A* SOLVING
-;;
-;; Called by Node.js server with command-line arguments.
-;; Generates a random grid and solves it with A*, outputting JSON.
-;;
-;; Usage: racket server-gen.rkt <rows> <cols> <density> [mode]
-;; Example: racket server-gen.rkt 10 10 0.3 solvable
+;; Helper script called by the Node visualizer server.
+;; Usage from the repo root:
+;; racket src/server-gen.rkt <rows> <cols> <density> [mode]
+;; This file connects command-line arguments with grid generation and A*.
+;; AI assistance was used to optimize and organize this helper code, which
+;; is outside the main functional A* implementation.
 ;;
 
 (require json
