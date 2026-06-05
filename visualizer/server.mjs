@@ -156,7 +156,7 @@ function generateAndSolve(rows, cols, density, mode) {
     process.on('error', (error) => {
       console.error('Process error:', error);
       reject(new Error(
-        `Failed to start Racket. Add Racket to PATH or set RACKET_PATH to the full Racket.exe path. Details: ${error.message}`,
+        `Failed to start Racket. Add Racket to PATH or set RACKET_PATH to the full Racket executable path. Details: ${error.message}`,
       ));
     });
   });

@@ -122,6 +122,9 @@
 
 ;; ============================================================
 ;; NEIGHBORS
+;;
+;; map produces one candidate position per direction.
+;; filter keeps only the positions that are inside the grid and walkable.
 ;; ============================================================
 
 ;; Apply a direction step to a position to obtain the adjacent cell.
@@ -131,15 +134,9 @@
 
 ;; Return all valid neighbors reachable from pos in one step.
 (define (neighbors grid pos)
-  (define (collect-reachable-neighbors remaining-directions)
-    (cond
-      [(empty? remaining-directions) empty]
-      [(valid-position? grid (step-in-direction pos (first remaining-directions)))
-       (cons (step-in-direction pos (first remaining-directions))
-             (collect-reachable-neighbors (rest remaining-directions)))]
-      [else
-       (collect-reachable-neighbors (rest remaining-directions))]))
-  (collect-reachable-neighbors directions))
+  (filter (lambda (candidate) (valid-position? grid candidate))
+          (map (lambda (dir) (step-in-direction pos dir))
+               directions)))
 
 ;; ============================================================
 ;; HEURISTIC
@@ -175,10 +172,10 @@
 (define (heap-entry rank search-node left-subtree right-subtree)
   (list rank search-node left-subtree right-subtree))
 
-(define (heap-rank entry)         (if (empty? entry) 0 (first entry)))
-(define (heap-search-node entry)  (first (rest entry)))
-(define (heap-left-subtree entry) (first (rest (rest entry))))
-(define (heap-right-subtree entry)(first (rest (rest (rest entry)))))
+(define (heap-rank entry)          (if (empty? entry) 0 (first entry)))
+(define (heap-search-node entry)   (first (rest entry)))
+(define (heap-left-subtree entry)  (first (rest (rest entry))))
+(define (heap-right-subtree entry) (first (rest (rest (rest entry)))))
 
 ;; True when search-node-a has a lower (better) score than search-node-b.
 (define (lower-total-score? search-node-a search-node-b)
@@ -239,23 +236,10 @@
   (follow-parent-links goal-node empty))
 
 ;; Extract only the positions from a list of search nodes.
+;;
+;; map applies node-position to every node in the list.
 (define (extract-positions-from-nodes node-list)
-  (cond
-    [(empty? node-list) empty]
-    [else (cons (node-position (first node-list))
-                (extract-positions-from-nodes (rest node-list)))]))
-
-;; Reverse a list with an accumulator.
-(define (reverse-list values)
-  (define (walk remaining reversed)
-    (cond
-      [(empty? remaining) reversed]
-      [else (walk (rest remaining) (cons (first remaining) reversed))]))
-  (walk values empty))
-
-;; Visited nodes are stored newest-first, so reverse them before returning.
-(define (visited-positions-in-order visited-nodes)
-  (reverse-list (extract-positions-from-nodes visited-nodes)))
+  (map (lambda (n) (node-position n)) node-list))
 
 ;; ============================================================
 ;; FRONTIER EXPANSION
@@ -265,11 +249,13 @@
 ;; ============================================================
 
 ;; True when the visited list already contains a node at this position.
+;;
+;; findf walks the list and returns the first node whose position matches,
+;; or false when none is found.
 (define (position-already-visited? visited-nodes pos)
-  (cond
-    [(empty? visited-nodes) false]
-    [(same-position? (node-position (first visited-nodes)) pos) true]
-    [else (position-already-visited? (rest visited-nodes) pos)]))
+  (if (findf (lambda (n) (same-position? (node-position n) pos)) visited-nodes)
+      true
+      false))
 
 ;; Insert search nodes for all unvisited neighbor positions into the frontier.
 (define (enqueue-unvisited-neighbors neighbor-positions current-node frontier visited-nodes goal)
@@ -304,9 +290,9 @@
 (define (search-from-frontier grid frontier visited-nodes goal)
   (cond
     [(priority-queue-empty? frontier)
-     (result false (visited-positions-in-order visited-nodes) empty false)]
+     (result false (extract-positions-from-nodes visited-nodes) empty false)]
     [else
-     (define current-node      (best-node frontier))
+     (define current-node             (best-node frontier))
      (define frontier-without-current (remove-best-node frontier))
      (define visited-with-current     (cons current-node visited-nodes))
      (cond
@@ -314,7 +300,7 @@
         (search-from-frontier grid frontier-without-current visited-nodes goal)]
        [(same-position? (node-position current-node) goal)
         (result true
-                (visited-positions-in-order visited-with-current)
+                (extract-positions-from-nodes visited-with-current)
                 (reconstruct-path current-node)
                 false)]
        [else
@@ -328,8 +314,15 @@
          visited-with-current
          goal)])]))
 
+
+;; =================== End of A* implementation ===============
+
+
 ;; ============================================================
 ;; PUBLIC ENTRY POINT
+;;
+;; This is used by the tests. It validates the input and 
+;; starts the search. It is not part of the core algorithm.
 ;; ============================================================
 
 ;; Find the shortest path from start to goal in the given grid.

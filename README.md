@@ -330,7 +330,7 @@ The visualizer displays the grid, obstacles, visited cells, and final path. It a
 
 ## 10.1 Base Cases
 
-The Racket test file includes the base cases that are necessary to check the behavior of the algorithm. Each case checks the input condition and the result immediately:
+The file `tests/basic-scenarios.rkt` includes the base cases that are necessary to check the behavior of the algorithm. Each case checks the input condition and the result immediately:
 
 | Test case | What is checked | Expected result | Current result |
 | --- | --- | --- | --- |
@@ -340,44 +340,46 @@ The Racket test file includes the base cases that are necessary to check the beh
 | Invalid start | The start position is an obstacle. | `success` is false, `visited` is empty, and the error is `"Invalid start position"`. | Passed. |
 | Invalid goal | The goal position is outside the grid. | `success` is false, `visited` is empty, and the error is `"Invalid goal position"`. | Passed. |
 
-RackUnit is used for these tests because it provides direct checks such as `check-true`, `check-false`, and `check-equal?`.
-
 ## 10.2 Algorithm Effectiveness Against the Optimal Result
 
-The project also includes an effectiveness test in:
+The file for the effectiveness test is:
 
 ```text
-tests/bfs_compare.py
+tests/optimal-path-validation.rkt
 ```
 
 BFS is used only to obtain the optimal result because this grid is unweighted. Every valid movement has the same cost: one step. In an unweighted graph, BFS finds the shortest path measured by number of edges, because it explores all positions at distance `d` before exploring positions at distance `d + 1` (OpenDSA, n.d.-b). For this project, that shortest path is the perfect outcome used to evaluate A*.
 
 The effectiveness test uses a `0%` threshold. This means that when the optimal solver finds a path, A* must return a path with exactly the same length. A longer A* path fails the test, because the heuristic should still lead to the optimal route. A shorter A* path also fails, because that would mean one of the path calculations is inconsistent.
 
-The Python script calls `tests/astar-case-runner.rkt`, reads the A* results as JSON, calculates the optimal path for the same grids, and checks only the outcome. It does not evaluate the number of explored cells. The test checks whether A* agrees with the optimal result about reachability and, when a path exists, whether the A* path length is equal to the optimal path length.
+The file calculates the optimal path in the same test file and checks only the outcome. It does not evaluate the number of explored cells. The test checks whether A* agrees with the optimal result about reachability and, when a path exists, whether the A* path length is equal to the optimal path length.
 
-The effectiveness test includes the five base cases and twelve generated grid cases. The generated cases use larger grids from `12x12` to `25x25`, different obstacle densities, solvable grids, blocked grids, and random grids. Each generated case uses a fixed seed, so the test runs several generated iterations while keeping the results repeatable.
-
-RackUnit reports six test groups: five base-case groups and one optimality-validation group. The optimality-validation group contains the seventeen fixed and generated cases checked against the optimal path length.
+The effectiveness test includes five fixed cases and twelve generated grid cases. The generated cases use larger grids from `12x12` to `25x25`, different obstacle densities, solvable grids, blocked grids, and random grids. Each generated case uses a fixed seed, so the test runs several generated iterations while keeping the results repeatable.
 
 ## 10.3 Test Output
 
-The current test command is:
+From Linux, macOS, or any terminal where Racket is in `PATH`, the test commands are:
+
+```bash
+raco test tests/basic-scenarios.rkt
+raco test tests/optimal-path-validation.rkt
+```
+
+On my Windows setup, the same tests can also be run with the full Racket path:
 
 ```powershell
-& "C:\Program Files\Racket\Racket.exe" -l raco test tests/test-astar.rkt
+& "C:\Program Files\Racket\Racket.exe" -l raco test tests\basic-scenarios.rkt
+& "C:\Program Files\Racket\Racket.exe" -l raco test tests\optimal-path-validation.rkt
 ```
 
-Output:
+The expected output is:
 
 ```text
-Optimal-path validation tests passes 17/17 cases, 0% threshold
-
-========================================
-OK: A* TESTS PASSED
-========================================
-6 tests passed
+5 tests passed
+All 17 tests passed
 ```
+
+Meaning that all base cases passed and all fixed and generated cases passed the optimality validation.
 
 ---
 
@@ -391,8 +393,9 @@ All commands are written from the repository root.
 | Run API server | `npm --prefix visualizer run api` |
 | Run visualizer | `npm --prefix visualizer run dev` |
 | Build visualizer | `npm --prefix visualizer run build` |
-| Run tests if Racket is in `PATH` | `raco test tests/test-astar.rkt` |
-| Run tests on this Windows setup | `& "C:\Program Files\Racket\Racket.exe" -l raco test tests/test-astar.rkt` |
+| Run basic scenarios | `raco test tests/basic-scenarios.rkt` |
+| Run optimal validation | `raco test tests/optimal-path-validation.rkt` |
+| Run one generated case directly | `racket src/server-gen.rkt 10 10 0.3 solvable` |
 
 Open the visualizer at:
 
@@ -400,7 +403,9 @@ Open the visualizer at:
 http://127.0.0.1:5173/
 ```
 
-The `raco test` command runs the Racket test file from the repository root.
+The `raco` and `racket` commands work the same way on Linux, macOS, and Windows when Racket is added to `PATH`. If Racket is not in `PATH` on Windows, use the full path shown in the testing section.
+
+If Windows PowerShell blocks `npm`, replace it with `npm.cmd` in the same command.
 
 ---
 
@@ -499,55 +504,167 @@ This organization keeps the concurrency paradigm focused on independent work. Th
 
 ## 13.1 Functional Implementation
 
-Let `V` be the number of cells in the grid, and let `E` be the number of valid movements between cells.
+Let `V` be the number of free cells in the grid and `E` the number of valid
+moves between them.
 
-The frontier is represented as a priority queue using a leftist heap. The function `best-node` reads the root of the queue, and `remove-best-node` removes that root by merging the two child queues. Heap-based priority queues are used because they avoid scanning every frontier node just to find the next one (OpenDSA, n.d.-a).
+### Heap Operations
 
-```text
-best-node: O(1)
-priority-queue-insert: O(log F)
-priority-queue-remove-min: O(log F)
-```
+The frontier is a leftist heap. Reading the best node with `best-node`
+costs O(1) because it is always at the root. Inserting and removing nodes
+both work by merging two heaps along their right side, which takes at most
+O(log F) steps where F is the current number of nodes in the frontier.
+Since at most one node is inserted per move:
 
-`F` is the number of nodes currently stored in the frontier. Since A* may insert nodes while checking the valid movements in the grid, the priority queue part of the search is approximately:
+| Operation | Cost |
+| --- | --- |
+| `best-node` | O(1) |
+| `priority-queue-insert` | O(log E) |
+| `priority-queue-remove-min` | O(log E) |
+| Total heap work | O(E log E) |
 
-```text
-O(E log E)
-```
+### Visited Check
 
-The implementation stores the visited values as a list. This means that checking whether a position was already visited depends on the size of the visited list. A version focused on larger grids could store visited positions in a set or dictionary.
+The visited list is a plain list. Every time the algorithm considers a
+neighbor, `position-already-visited?` walks the entire visited list from
+the start to check whether that position was already explored. The list can
+hold up to V entries, and this check runs up to E times:
 
-The space complexity is:
+| Operation | Cost |
+| --- | --- |
+| `position-already-visited?` | O(V) per call |
+| Called up to E times total | O(E · V) |
 
-```text
-O(V + F)
-```
+This is the slowest part of the implementation. Which in foresight would be improved by using a hash table instead, which  would make each check O(1) and bring the total time down.
 
-This is because the algorithm may store frontier nodes, visited nodes, parent links, and the final path. The grid itself also contains `V` cells.
+### Path Reconstruction
+
+Once the goal is found, `reconstruct-path` and `visited-positions-in-order`
+each walk a list of at most V nodes once. This adds O(V) at the end and
+does not change the overall result.
+
+### Summary
+
+| Part | Time | Space |
+| --- | --- | --- |
+| Heap operations | O(E log E) | O(V) |
+| Visited check | O(E · V) | O(V) |
+| Path reconstruction | O(V) | O(V) |
+| **Overall** | **O(E · V)** | **O(V)** |
+
+The visited check is the bottleneck. 
 
 ## 13.2 Concurrency
 
-In the concurrency paradigm, one A* request has the same cost as the functional implementation because the search logic is still the same. The difference appears when there are several independent path requests. If there are `R` requests, the total sequential work is approximately:
+Each individual search still costs O(E · V) because the algorithm is the
+same. The difference is that with R independent path requests running one
+after another, the total time is:
 
 ```text
-O(R * E log E)
+O(R · E · V)
 ```
 
-With `T` worker threads, those requests can be distributed across the thread pool. In an ideal case where the tasks are similar in size and the machine has enough CPU resources, the wall-clock work can be approximated as:
+With T worker threads, those requests can run at the same time, so the total real world time is faster. But this does not make any single search faster. It means R searches can run in parallel instead of waiting for each other. The locks around the task
+queue and results list add a small overhead, but that cost is minor compared to the search itself.
+
+**Space per worker.** Each active worker keeps its own frontier, visited
+list, and parent links. With T workers running at the same time:
+
+| Part | Space |
+| --- | --- |
+| Shared grid | O(V) |
+| Each active worker | O(V) |
+| T active workers | O(T · V) |
+| Task queue and results | O(R) |
+| **Overall** | **O(T · V + R)** |
+
+# 13. Complexity Analysis
+
+## 13.1 Functional Implementation
+
+Let `V` be the number of free cells in the grid and `E` the number of valid
+moves between them.
+
+### Heap Operations
+
+The frontier is a leftist heap. Reading the best node with `best-node`
+costs O(1) because it is always at the root. Inserting and removing nodes
+both work by merging two heaps along their right side, which takes at most
+O(log F) steps where F is the current number of nodes in the frontier.
+Since at most one node is inserted per move:
+
+| Operation | Cost |
+| --- | --- |
+| `best-node` | O(1) |
+| `priority-queue-insert` | O(log E) |
+| `priority-queue-remove-min` | O(log E) |
+| Total heap work | O(E log E) |
+
+### Visited Check
+
+The visited list is a plain list. Every time the algorithm considers a
+neighbor, `position-already-visited?` walks the entire visited list from
+the start to check whether that position was already explored. The list can
+hold up to V entries, and this check runs up to E times:
+
+| Operation | Cost |
+| --- | --- |
+| `position-already-visited?` | O(V) per call |
+| Called up to E times total | O(E · V) |
+
+This is the slowest part of the implementation. Using a hash table instead
+of a list would make each check O(1) and bring the total time down to
+O(E log E).
+
+### Path Reconstruction
+
+Once the goal is found, `reconstruct-path` and `visited-positions-in-order`
+each walk a list of at most V nodes once. This adds O(V) at the end and
+does not change the overall result.
+
+### Summary
+
+| Part | Time | Space |
+| --- | --- | --- |
+| Heap operations | O(E log E) | O(V) |
+| Visited check | O(E · V) | O(V) |
+| Path reconstruction | O(V) | O(V) |
+| **Overall** | **O(E · V)** | **O(V)** |
+
+The visited check is the bottleneck. Replacing the list with a hash table
+would remove it and bring the total time down to O(E log E).
+
+## 13.2 Concurrency
+
+Each individual search still costs O(E · V) because the algorithm is the
+same. The difference is that with R independent path requests running one
+after another, the total time is:
 
 ```text
-O((R * E log E) / T)
+O(R · E · V)
 ```
 
-This does not mean that one path becomes faster. It means that several independent path requests can progress at the same time. The task queue and results collection add synchronization work, but those operations are short compared with the search itself.
-
-The space complexity for concurrency depends on how many searches are active at the same time. Each worker owns its own frontier, visited list, and parent links. With `T` active workers, the active search memory is approximately:
+With T worker threads, those requests can run at the same time, so the
+total wall-clock time becomes roughly:
 
 ```text
-O(T * (V + F))
+O((R · E · V) / T)
 ```
 
-The shared grid is stored once, and the task queue and results collection grow with the number of requests.
+This does not make any single search faster. It means R searches can run
+in parallel instead of waiting for each other. The locks around the task
+queue and results list add a small overhead, but that cost is minor
+compared to the search itself.
+
+**Space per worker.** Each active worker keeps its own frontier, visited
+list, and parent links. With T workers running at the same time:
+
+| Part | Space |
+| --- | --- |
+| Shared grid | O(V) |
+| Each active worker | O(V) |
+| T active workers | O(T · V) |
+| Task queue and results | O(R) |
+| **Overall** | **O(T · V + R)** |
 
 ---
 
@@ -555,29 +672,39 @@ The shared grid is stored once, and the task queue and results collection grow w
 
 ## 14.1 Functional Version
 
-The functional version represents the search as data transformation. The important values are the frontier, the visited list, and the parent links. Each recursive call receives updated versions of these values.
+The functional version treats the search as a series of transformations. The frontier, the visited list, and the parent links are passed from one recursive call to the next. Each call receives the current state and returns a new one; nothing is modified in place.
 
-This makes the reasoning of the algorithm visible. The program is not centered on an object changing internal fields. Instead, the progress of the search is shown through values passed between functions.
+This keeps the algorithm easy to follow. At any point in the search, the progress is visible in the values being passed between functions rather than hidden inside an object.
 
 ## 14.2 Concurrency
 
-Where the functional paradigm shows the progress of one search through recursive calls, concurrency organizes several independent requests during the same period of execution. The grid is shared as read-only data, while each thread owns the frontier, visited list, and parent links for the task it is solving.
+The concurrency version keeps the same A* logic but runs several searches at the same time. The grid is shared between all workers because no thread ever changes it. Each worker owns its own frontier, visited list, and parent links, so searches do not interfere with each other.
 
-The central concern changes from one search state to data ownership. Thread-local values can be updated freely by the worker that owns them. Shared values, such as the task queue and results collection, must be protected when threads take new work or store completed paths. This keeps the synchronization boundary small: most of the work happens independently inside each thread.
+The only parts that need coordination are the task queue and the results list, because all workers read from one and write to the other. Everything else runs independently.
 
-This paradigm is more useful when the problem involves many agents or many independent path requests. For a single path, concurrency does not improve the A* logic. For many simultaneous requests, it distributes the searches across worker threads and collects the results after each task finishes.
+This approach is useful when many paths need to be found at once. For a single search it adds no benefit, but for many simultaneous requests it reduces the total waiting time by distributing the work across threads.
+
+## 14.3 Comparison Table
+
+| | Functional | Concurrency |
+| --- | --- | --- |
+| Search logic | Unchanged | Unchanged |
+| State | Passed between recursive calls | Owned by each worker thread |
+| Shared data | None | Read-only grid |
+| Protected data | None needed | Task queue and results list |
+| Best suited for | One search at a time | Many searches at once |
 
 ---
 
 # 15. Conclusion
 
-This project implements A* as a functional pathfinding algorithm in Racket. The algorithm validates the input, creates a start node, selects the best frontier node, expands valid neighbors, updates the search state, and reconstructs the final path using parent links. The implementation uses lists and recursive functions to keep the process close to the functional programming style studied in class.
+The current evidence did not only allow me to implement the A* algorithm in Racket, but also gave me the opportunity to understand more deeply how a heuristic algorithm should be evaluated. At the beginning, the project seemed to be mainly about finding a path from one point of the grid to another and showing that process in a visual way. However, one of the main complications I found was that a pathfinding algorithm can look correct because it reaches the goal, while still not returning the best possible path. This changed the direction of the tests, because checking only if the algorithm was successful was not enough. The implementation also had to be validated against the optimal result, using a `0%` threshold, so A* could only pass when the path length was exactly equal to the best possible solution for that grid.
 
-The tests cover the base cases and validate A* against the optimal path length. Since every movement in the grid has the same cost, the validator can calculate the shortest path length for the same problem. This helps check that the A* result is not only valid, but also optimal for the tested grids.
+The understanding and application of the functional paradigm was not only useful because it made the program work, but because it forced me to think about the algorithm as a sequence of transformations instead of a group of instructions changing the same state. The frontier, the visited cells, the parent links, and the final path all had to be represented as values that move through the recursive process. This made some parts easier to explain, especially the way the search advances from one state to the next, but it also made other decisions harder because every helper function had to have a clear purpose inside the algorithm. For example, changing the frontier from a simple list to a priority queue made the implementation less direct at first, but also made it more effective because A* constantly needs to choose the node with the lowest `f` value.
 
-The visualizer shows the same search data used by the tests: visited cells, final path, and success or failure status.
+The complexity analysis and the alternative concurrency paradigm also helped me understand that a paradigm is not automatically better than another one. The functional version is useful for explaining one search clearly, because the algorithm can be followed through recursive calls and data passed between functions. A concurrent version would not make one individual A* search faster by itself, but it would be useful when several independent path requests need to be solved during the same execution. This distinction was important because it showed that the value of a paradigm depends on the problem being solved and on what part of the solution needs to improve.
 
----
+Moving forward, I am interested in researching more problems where heuristic algorithms and different programming paradigms can be connected, especially in cases where the result is not only judged by whether it works, but by how well it works compared to the best possible outcome. This project made me realize that changing a programming language or adding a visual interface is not the hardest part. The hardest part is changing the way I evaluate a solution, because a correct-looking result is not always enough evidence that the algorithm is behaving correctly.
 
 # References
 
