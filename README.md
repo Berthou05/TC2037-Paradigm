@@ -50,11 +50,30 @@ This kind of problem appears in robotics, videogames, simulations, and map syste
 
 ---
 
-# 3. Functional Programming Background
+# 3. Functional Programming 
 
-Functional programming organizes programs around functions and the values those functions produce. Instead of focusing mainly on objects that change internal state, we focus on transformations: one function receives input data and returns output data. This is important for this project because the A* search can be understood as a transformation of a search state.
+Functional programming is a programming paradigm that organizes programs around functions and the values those functions produce. Instead of thinking mainly in terms of variables that change step by step, the programmer thinks in terms of transformations: a function receives input, processes it and returns a result. This does not mean that the program becomes automatically simpler, but it gives the solution a structure that is easier to reason about when each function has a clear purpose.
 
-The roots of functional programming are related to lambda calculus, introduced by Alonzo Church as a formal model of computation through function abstraction and application (Church, 1936). This project does not require writing lambda calculus directly, but the connection is relevant because it explains why functions are treated as central building blocks. 
+The roots of functional programming are connected to lambda calculus, introduced by Alonzo Church in the 1930s as a formal way to study computation through function abstraction and application (Church, 1936). This project does not require writing lambda expressions directly, but that influence matters because it explains why functions are treated as central building blocks in functional languages. A function is not only a piece of syntax; it is a named computation that can be understood, tested and reused.
+
+A key idea in functional programming is predictability. When a function receives the same input, it should return the same output without depending on hidden changes somewhere else in the program. For example, a Manhattan distance function receives two positions and returns a number. It does not need to modify the grid, update the visualizer or store a global value to do its job.
+
+```prolog
+(define (manhattan a b)
+  (+ (abs (- (first a) (first b)))
+     (abs (- (second a) (second b)))))
+```
+This style is useful because it makes each part of the program easier to check. If the Manhattan distance function is wrong, that error can be tested directly. If the neighbor generation is wrong, that part can also be isolated. Abelson, Sussman and Sussman (1996) explain that procedures help build abstractions by giving names to computational processes, and this is exactly what happens in the implementation: each function names one part of the pathfinding logic instead of leaving all decisions inside one long block of code.
+
+Hughes (1989) argues that functional programming supports modularity because programs can be built by combining smaller parts. In this project, that modularity is important because pathfinding has several possible points of failure. The algorithm may generate an invalid neighbor, step outside the grid, cross an obstacle, select the wrong node from the frontier or reconstruct the path in the wrong order. A functional structure does not remove those risks by itself, but it makes them easier to locate because the responsibilities are separated.
+
+## 3.1 Why functional programming fits A*
+
+A* fits the functional paradigm because the algorithm can be understood as a repeated transformation of a search state. The search state includes the current node, the frontier, the visited list, the goal and the parent information needed to rebuild the path. The frontier is the group of nodes that have already been discovered but have not been fully explored yet; in simple terms, it works like the algorithm's waiting list. At each step, A* selects one node from that waiting list, expands it and produces an updated version of the search state.
+
+This way of thinking matches functional programming because the algorithm does not need to hide its progress inside an object with internal mutable state. The progress is visible in the data being passed from one function to another. One function validates positions, another generates neighbors, another calculates the heuristic, another selects the best node, and the recursive search connects those decisions into a complete process. The result is not only a working algorithm, but a solution whose reasoning can be followed from input to output.
+
+The functional paradigm is especially useful here because it supports clarity before optimization. A* can be implemented with more efficient data structures, such as a priority queue, but the first version uses a list for the frontier because that makes the logic easier to explain. This choice has a performance cost, which is analyzed later, but it also makes the algorithm more transparent: the reader can see how nodes are selected, how neighbors are added and how the final path is reconstructed.
 
 ---
 
@@ -62,7 +81,9 @@ The roots of functional programming are related to lambda calculus, introduced b
 
 ## 4.1 General Idea
 
-A* searches by keeping a frontier of discovered nodes. A node in the frontier has already been found, but it has not been fully explored yet. At every step, A* chooses the node that seems most promising according to the value:
+A* is an informed search algorithm. It is called informed because it uses a heuristic, which is an estimate that helps the algorithm decide which option seems more promising. Hart, Nilsson and Raphael (1968) introduced A* as a formal way to use heuristic information in graph search. The important idea is that the algorithm does not choose the next node randomly, and it also does not choose only based on how far it has already traveled. It combines the cost already accumulated with an estimate of the cost still missing.
+
+The algorithm searches by keeping a frontier of discovered nodes. A node in the frontier has already been found, but it has not been fully explored yet. At every step, A* chooses the node that seems most promising according to the value:
 
 ```text
 f(n) = g(n) + h(n)
@@ -215,7 +236,7 @@ When the goal is found, the algorithm follows parent links from the goal node ba
 
 ---
 
-# 7. Step-by-Step Walkthrough
+# 7. A* Implementation Visual Walkthrough
 
 ## 7.1 Initial Grid
 
@@ -297,7 +318,93 @@ flowchart TD
     G --> L["reconstruct-path"]
 ```
 
-## 8.3 Alternative Paradigm: Concurrency
+# 9. Visualizer
+
+The visualizer displays the grid, obstacles, visited cells, and final path. It also allows the user to change the grid size, obstacle density, path requirement, and playback speed.
+
+![Visualizer Example](images/VisualizerExample.png)
+
+---
+
+# 10. Testing
+
+## 10.1 Base Cases
+
+The Racket test file includes the base cases that are necessary to check the behavior of the algorithm. Each case checks the input condition and the result immediately:
+
+| Test case | What is checked | Expected result | Current result |
+| --- | --- | --- | --- |
+| Simple path | The sample grid has a route from `sample-start` to `sample-goal`. | `success` is true, the path starts at the start cell, ends at the goal cell, uses only walkable cells, and moves one cell at a time. | Passed. |
+| No solution | The goal is surrounded by obstacles. | `success` is false, `path` is empty, and the visited list begins from the start cell. | Passed. |
+| Start equals goal | The start and goal are both `(0 0)`. | `success` is true, `visited` is `((0 0))`, and `path` is `((0 0))`. | Passed. |
+| Invalid start | The start position is an obstacle. | `success` is false, `visited` is empty, and the error is `"Invalid start position"`. | Passed. |
+| Invalid goal | The goal position is outside the grid. | `success` is false, `visited` is empty, and the error is `"Invalid goal position"`. | Passed. |
+
+RackUnit is used for these tests because it provides direct checks such as `check-true`, `check-false`, and `check-equal?`.
+
+## 10.2 Algorithm Effectiveness Against the Optimal Result
+
+The project also includes an effectiveness test in:
+
+```text
+tests/bfs_compare.py
+```
+
+BFS is used only to obtain the optimal result because this grid is unweighted. Every valid movement has the same cost: one step. In an unweighted graph, BFS finds the shortest path measured by number of edges, because it explores all positions at distance `d` before exploring positions at distance `d + 1` (OpenDSA, n.d.-b). For this project, that shortest path is the perfect outcome used to evaluate A*.
+
+The effectiveness test uses a `0%` threshold. This means that when the optimal solver finds a path, A* must return a path with exactly the same length. A longer A* path fails the test, because the heuristic should still lead to the optimal route. A shorter A* path also fails, because that would mean one of the path calculations is inconsistent.
+
+The Python script calls `tests/astar-case-runner.rkt`, reads the A* results as JSON, calculates the optimal path for the same grids, and checks only the outcome. It does not evaluate the number of explored cells. The test checks whether A* agrees with the optimal result about reachability and, when a path exists, whether the A* path length is equal to the optimal path length.
+
+The effectiveness test includes the five base cases and twelve generated grid cases. The generated cases use larger grids from `12x12` to `25x25`, different obstacle densities, solvable grids, blocked grids, and random grids. Each generated case uses a fixed seed, so the test runs several generated iterations while keeping the results repeatable.
+
+RackUnit reports six test groups: five base-case groups and one optimality-validation group. The optimality-validation group contains the seventeen fixed and generated cases checked against the optimal path length.
+
+## 10.3 Test Output
+
+The current test command is:
+
+```powershell
+& "C:\Program Files\Racket\Racket.exe" -l raco test tests/test-astar.rkt
+```
+
+Output:
+
+```text
+Optimal-path validation tests passes 17/17 cases, 0% threshold
+
+========================================
+OK: A* TESTS PASSED
+========================================
+6 tests passed
+```
+
+---
+
+# 11. Running the Project
+
+All commands are written from the repository root.
+
+| Purpose | Command |
+| --- | --- |
+| Install visualizer dependencies | `npm --prefix visualizer install` |
+| Run API server | `npm --prefix visualizer run api` |
+| Run visualizer | `npm --prefix visualizer run dev` |
+| Build visualizer | `npm --prefix visualizer run build` |
+| Run tests if Racket is in `PATH` | `raco test tests/test-astar.rkt` |
+| Run tests on this Windows setup | `& "C:\Program Files\Racket\Racket.exe" -l raco test tests/test-astar.rkt` |
+
+Open the visualizer at:
+
+```text
+http://127.0.0.1:5173/
+```
+
+The `raco test` command runs the Racket test file from the repository root.
+
+---
+
+## 12. Alternative Paradigm: Concurrency
 
 Another paradigm which could be used is concurrency. In a concurrent design, several agents or several independent path requests can be processed over the same grid during the same period of execution. This does not change the A* logic for one request. Each request still needs a start position, a goal position, a frontier, visited nodes, and parent links. What changes is how multiple requests are scheduled and how their results are collected.
 
@@ -387,95 +494,10 @@ This organization keeps the concurrency paradigm focused on independent work. Th
 
 ---
 
-# 9. Visualizer
 
-The visualizer displays the grid, obstacles, visited cells, and final path. It also allows the user to change the grid size, obstacle density, path requirement, and playback speed.
+# 13. Complexity Analysis
 
-![Visualizer Example](images/VisualizerExample.png)
-
----
-
-# 10. Testing
-
-## 10.1 Base Cases
-
-The Racket test file includes the base cases that are necessary to check the behavior of the algorithm. Each case checks the input condition and the result immediately:
-
-| Test case | What is checked | Expected result | Current result |
-| --- | --- | --- | --- |
-| Simple path | The sample grid has a route from `sample-start` to `sample-goal`. | `success` is true, the path starts at the start cell, ends at the goal cell, uses only walkable cells, and moves one cell at a time. | Passed. |
-| No solution | The goal is surrounded by obstacles. | `success` is false, `path` is empty, and the visited list begins from the start cell. | Passed. |
-| Start equals goal | The start and goal are both `(0 0)`. | `success` is true, `visited` is `((0 0))`, and `path` is `((0 0))`. | Passed. |
-| Invalid start | The start position is an obstacle. | `success` is false, `visited` is empty, and the error is `"Invalid start position"`. | Passed. |
-| Invalid goal | The goal position is outside the grid. | `success` is false, `visited` is empty, and the error is `"Invalid goal position"`. | Passed. |
-
-RackUnit is used for these tests because it provides direct checks such as `check-true`, `check-false`, and `check-equal?`.
-
-## 10.2 Algorithm Effectiveness Against the Optimal Result
-
-The project also includes an effectiveness test in:
-
-```text
-tests/bfs_compare.py
-```
-
-BFS is used only to obtain the optimal result because this grid is unweighted. Every valid movement has the same cost: one step. In an unweighted graph, BFS finds the shortest path measured by number of edges, because it explores all positions at distance `d` before exploring positions at distance `d + 1` (OpenDSA, n.d.-b). For this project, that shortest path is the perfect outcome used to evaluate A*.
-
-The effectiveness test uses a `0%` threshold. This means that when the optimal solver finds a path, A* must return a path with exactly the same length. A longer A* path fails the test, because the heuristic should still lead to the optimal route. A shorter A* path also fails, because that would mean one of the path calculations is inconsistent.
-
-The Python script calls `tests/astar-case-runner.rkt`, reads the A* results as JSON, calculates the optimal path for the same grids, and checks only the outcome. It does not evaluate the number of explored cells. The test checks whether A* agrees with the optimal result about reachability and, when a path exists, whether the A* path length is equal to the optimal path length.
-
-The effectiveness test includes the five base cases and twelve generated grid cases. The generated cases use larger grids from `12x12` to `25x25`, different obstacle densities, solvable grids, blocked grids, and random grids. Each generated case uses a fixed seed, so the test runs several generated iterations while keeping the results repeatable.
-
-RackUnit reports six test groups: five base-case groups and one optimality-validation group. The optimality-validation group contains the seventeen fixed and generated cases checked against the optimal path length.
-
-## 10.3 Test Output
-
-The current test command is:
-
-```powershell
-& "C:\Program Files\Racket\Racket.exe" -l raco test tests/test-astar.rkt
-```
-
-Output:
-
-```text
-Optimal-path validation tests passes 17/17 cases, 0% threshold
-
-========================================
-OK: A* TESTS PASSED
-========================================
-6 tests passed
-```
-
----
-
-# 11. Running the Project
-
-All commands are written from the repository root.
-
-| Purpose | Command |
-| --- | --- |
-| Install visualizer dependencies | `npm --prefix visualizer install` |
-| Run API server | `npm --prefix visualizer run api` |
-| Run visualizer | `npm --prefix visualizer run dev` |
-| Build visualizer | `npm --prefix visualizer run build` |
-| Run tests if Racket is in `PATH` | `raco test tests/test-astar.rkt` |
-| Run tests on this Windows setup | `& "C:\Program Files\Racket\Racket.exe" -l raco test tests/test-astar.rkt` |
-
-Open the visualizer at:
-
-```text
-http://127.0.0.1:5173/
-```
-
-The `raco test` command runs the Racket test file from the repository root.
-
----
-
-# 12. Complexity Analysis
-
-## 12.1 Functional Implementation
+## 13.1 Functional Implementation
 
 Let `V` be the number of cells in the grid, and let `E` be the number of valid movements between cells.
 
@@ -503,7 +525,7 @@ O(V + F)
 
 This is because the algorithm may store frontier nodes, visited nodes, parent links, and the final path. The grid itself also contains `V` cells.
 
-## 12.2 Concurrency
+## 13.2 Concurrency
 
 In the concurrency paradigm, one A* request has the same cost as the functional implementation because the search logic is still the same. The difference appears when there are several independent path requests. If there are `R` requests, the total sequential work is approximately:
 
@@ -529,15 +551,15 @@ The shared grid is stored once, and the task queue and results collection grow w
 
 ---
 
-# 13. Paradigm Comparison
+# 14. Paradigm Comparison
 
-## 13.1 Functional Version
+## 14.1 Functional Version
 
 The functional version represents the search as data transformation. The important values are the frontier, the visited list, and the parent links. Each recursive call receives updated versions of these values.
 
 This makes the reasoning of the algorithm visible. The program is not centered on an object changing internal fields. Instead, the progress of the search is shown through values passed between functions.
 
-## 13.2 Concurrency
+## 14.2 Concurrency
 
 Where the functional paradigm shows the progress of one search through recursive calls, concurrency organizes several independent requests during the same period of execution. The grid is shared as read-only data, while each thread owns the frontier, visited list, and parent links for the task it is solving.
 
@@ -545,17 +567,9 @@ The central concern changes from one search state to data ownership. Thread-loca
 
 This paradigm is more useful when the problem involves many agents or many independent path requests. For a single path, concurrency does not improve the A* logic. For many simultaneous requests, it distributes the searches across worker threads and collects the results after each task finishes.
 
-## 13.3 Overall Comparison
-
-| Approach | Main idea | Advantage | Limitation |
-| --- | --- | --- | --- |
-| Functional A* | Transform one search state through recursive calls. | Priority queue avoids scanning the whole frontier. | Visited list is still simple instead of fully optimized. |
-| Concurrency | Run independent path requests through a task queue and thread pool. | Useful for many agents or many requests. | Shared queue and result collection require synchronization. |
-| Optimal result validation | Finds the shortest path in the unweighted grid. | Checks that A* returns the best path length. | Only applies directly because all moves have equal cost. |
-
 ---
 
-# 14. Conclusion
+# 15. Conclusion
 
 This project implements A* as a functional pathfinding algorithm in Racket. The algorithm validates the input, creates a start node, selects the best frontier node, expands valid neighbors, updates the search state, and reconstructs the final path using parent links. The implementation uses lists and recursive functions to keep the process close to the functional programming style studied in class.
 
@@ -571,7 +585,11 @@ Abelson, H., Sussman, G. J., & Sussman, J. (1996). *Structure and interpretation
 
 Church, A. (1936). An unsolvable problem of elementary number theory. *American Journal of Mathematics, 58*(2), 345-363. https://doi.org/10.2307/2371045
 
+Felleisen, M., Findler, R. B., Flatt, M., & Krishnamurthi, S. (2018). How to design programs: An introduction to programming and computing (2nd ed.). MIT Press. https://htdp.org/
+
 Hart, P. E., Nilsson, N. J., & Raphael, B. (1968). A formal basis for the heuristic determination of minimum cost paths. *IEEE Transactions on Systems Science and Cybernetics, 4*(2), 100-107. https://doi.org/10.1109/TSSC.1968.300136
+
+Hughes, J. (1989). Why functional programming matters. The Computer Journal, 32(2), 98-107. https://doi.org/10.1093/comjnl/32.2.98
 
 NIST. (n.d.). *Leftist tree*. Dictionary of Algorithms and Data Structures. https://xlinux.nist.gov/dads/HTML/leftisttree.html
 
@@ -579,4 +597,9 @@ OpenDSA. (n.d.-a). *Heaps and priority queues*. https://opendsa.cs.vt.edu/ODSA/B
 
 OpenDSA. (n.d.-b). *Shortest-paths problems*. https://opendsa.org/OpenDSA/Books/Catalog/html/GraphShortest.html
 
+Racket Documentation. (n.d.). RackUnit: Unit testing. https://docs.racket-lang.org/rackunit/
+
 Russell, S., & Norvig, P. (2022). *Artificial intelligence: A modern approach* (4th ed.). Pearson. https://aima.cs.berkeley.edu/
+
+
+Williams, A. (2019). C++ concurrency in action: Practical multithreading (2nd ed.). Manning Publications. https://www.manning.com/books/c-plus-plus-concurrency-in-action-second-edition
