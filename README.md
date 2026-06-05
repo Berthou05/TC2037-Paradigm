@@ -171,7 +171,15 @@ The implementation is in:
 astar-implementation/astar.rkt
 ```
 
-The helper files in `src/` are used to generate grids and convert results into JSON for the visualizer. The Racket `json` library is used only in those helper files, not in the main A* implementation.
+The main project files are:
+
+```text
+astar-implementation/
+README.md
+tests/
+```
+
+The optional helper files in `.assets/src/` are used to generate grids and convert results into JSON for the visualizer. They are kept outside the main project view because the core submission is the algorithm, the README, and the tests. The Racket `json` library is used only in those helper files, not in the main A* implementation.
 
 ## 6.1 Validate the Input
 
@@ -242,41 +250,41 @@ When the goal is found, the algorithm follows parent links from the goal node ba
 
 At the beginning, the grid contains the start, the goal, free cells, and obstacles. The program first calls `a-star`, which validates the start and goal before creating the first node.
 
-![Step 1: validate the problem before searching](images/1.png)
+![Step 1: validate the problem before searching](.assets/images/1.png)
 
 ## 7.2 First Frontier
 
 After validation, the start node is created. Its `g` value is `0`, its `h` value is the Manhattan distance to the goal, and its `f` value is `g + h`. This node becomes the first element of the frontier.
 
-![Step 2: create the start node](images/2.png)
+![Step 2: create the start node](.assets/images/2.png)
 
 ## 7.3 First Expansion
 
 The algorithm selects the best node from the frontier using `best-node`, which reads the root of the priority queue. Since the frontier only contains the start node at the beginning, the start is selected first. Then the function `neighbors` finds the valid adjacent cells.
 
-![Step 3: select the first frontier node](images/3.png)
+![Step 3: select the first frontier node](.assets/images/3.png)
 
 ## 7.4 Middle of the Search
 
 As the search continues, the frontier contains several possible routes. At each step, `best-node` chooses the node with the lowest `f` value from the priority queue. Then `enqueue-unvisited-neighbors` adds new nodes for valid neighbors. The visited list grows as nodes are fully processed.
 
-![Step 4: generate valid neighbors](images/4.png)
+![Step 4: generate valid neighbors](.assets/images/4.png)
 
 The next screenshot shows how those neighbors start changing the frontier and visited lists as the search continues.
 
-![Step 5: update the frontier](images/5.png)
+![Step 5: update the frontier](.assets/images/5.png)
 
 ## 7.5 Finding the Goal
 
 When the selected node is equal to the goal position, `search-from-frontier` stops expanding the frontier, before that it will continue to repeat the loop. Once the goal is reached, the algorithm has found a valid route.
 
-![Step 6: continue until the goal is reached](images/6.png)
+![Step 6: continue until the goal is reached](.assets/images/6.png)
 
 ## 7.6 Path Reconstruction
 
 Once the goal is found, `reconstruct-path` follows the parent links from the goal back to the start. The visualizer then highlights the final path.
 
-![Step 7: reconstruct the final path](images/7.png)
+![Step 7: reconstruct the final path](.assets/images/7.png)
 
 ---
 
@@ -294,16 +302,18 @@ flowchart TD
     D --> E{"Frontier empty?"}
     E -->|"Yes"| F["Return failure"]
     E -->|"No"| G["Select best node"]
-    G --> H{"Goal reached?"}
-    H -->|"Yes"| I["Reconstruct path"]
-    H -->|"No"| J["Generate neighbors"]
-    J --> K["Update frontier and visited"]
-    K --> E
+    G --> H{"Already visited?"}
+    H -->|"Yes"| E
+    H -->|"No"| I{"Goal reached?"}
+    I -->|"Yes"| J["Reconstruct path"]
+    I -->|"No"| K["Generate neighbors"]
+    K --> L["Update frontier and visited"]
+    L --> E
 ```
 
 ## 8.2 Function Call Flow
 
-```mermaid
+``` mermaid
 flowchart TD
     A["a-star"] --> B["valid-position?"]
     B --> C["inside-grid?"]
@@ -312,17 +322,20 @@ flowchart TD
     E --> F["manhattan"]
     A --> G["search-from-frontier"]
     G --> H["best-node"]
-    G --> I["neighbors"]
-    G --> J["enqueue-unvisited-neighbors"]
-    J --> K["priority-queue-insert"]
-    G --> L["reconstruct-path"]
+    G --> I["position-already-visited?"]
+    G --> J["neighbors"]
+    J --> K["filter + map with lambdas"]
+    G --> L["enqueue-unvisited-neighbors"]
+    L --> I
+    L --> M["priority-queue-insert"]
+    G --> N["reconstruct-path"]
 ```
 
 # 9. Visualizer
 
 The visualizer displays the grid, obstacles, visited cells, and final path. It also allows the user to change the grid size, obstacle density, path requirement, and playback speed.
 
-![Visualizer Example](images/VisualizerExample.png)
+![Visualizer Example](.assets/images/VisualizerExample.png)
 
 ---
 
@@ -389,13 +402,13 @@ All commands are written from the repository root.
 
 | Purpose | Command |
 | --- | --- |
-| Install visualizer dependencies | `npm --prefix visualizer install` |
-| Run API server | `npm --prefix visualizer run api` |
-| Run visualizer | `npm --prefix visualizer run dev` |
-| Build visualizer | `npm --prefix visualizer run build` |
+| Install visualizer dependencies | `npm --prefix .assets/visualizer install` |
+| Run API server | `npm --prefix .assets/visualizer run api` |
+| Run visualizer | `npm --prefix .assets/visualizer run dev` |
+| Build visualizer | `npm --prefix .assets/visualizer run build` |
 | Run basic scenarios | `raco test tests/basic-scenarios.rkt` |
 | Run optimal validation | `raco test tests/optimal-path-validation.rkt` |
-| Run one generated case directly | `racket src/server-gen.rkt 10 10 0.3 solvable` |
+| Run one generated case directly | `racket .assets/src/server-gen.rkt 10 10 0.3 solvable` |
 
 Open the visualizer at:
 

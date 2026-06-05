@@ -4,12 +4,10 @@
 ;; Helper module that converts A* results into JSON for the visualizer.
 ;; It is not part of the core algorithm.
 ;; This file exists so the React/Node visualizer can read Racket results.
-;; AI assistance was used to optimize and organize this helper code, which
-;; is outside the main functional A* implementation.
 ;;
 
 (require json
-         "../astar-implementation/astar.rkt"
+         "../../astar-implementation/astar.rkt"
          "grid-gen.rkt")
 
 (provide result->jsexpr
@@ -99,5 +97,5 @@
 
 ;; Default: write sample grid result
 (module+ main
-  (write-result-json "output/result.json")
-  (displayln "Wrote output/result.json"))
+  (write-result-json ".assets/output/result.json")
+  (displayln "Wrote .assets/output/result.json"))

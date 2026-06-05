@@ -6,7 +6,7 @@
 ;;
 
 (require "../astar-implementation/astar.rkt"
-         "../src/grid-gen.rkt")
+         (file "../.assets/src/grid-gen.rkt"))
 
 ;; ============================================================
 ;; BFS — OPTIMAL PATH REFERENCE

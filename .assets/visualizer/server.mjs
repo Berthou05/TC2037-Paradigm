@@ -98,12 +98,11 @@ function parseGenerationParams(req) {
 // Generate grid using Racket
 function generateAndSolve(rows, cols, density, mode) {
   return new Promise((resolve, reject) => {
-    // Correct path: go up one level from visualizer to project root
-    const projectRoot = dirname(__dirname);
-    const racketScript = join(projectRoot, 'src', 'server-gen.rkt');
+    const supportRoot = dirname(__dirname);
+    const racketScript = join(supportRoot, 'src', 'server-gen.rkt');
 
     console.log(`Generating grid ${rows}x${cols} with ${density} density and ${mode} mode...`);
-    console.log(`Project root: ${projectRoot}`);
+    console.log(`Support root: ${supportRoot}`);
     console.log(`Using Racket script: ${racketScript}`);
 
     // Check if Racket file exists

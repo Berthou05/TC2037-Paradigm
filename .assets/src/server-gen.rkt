@@ -3,14 +3,12 @@
 ;;
 ;; Helper script called by the Node visualizer server.
 ;; Usage from the repo root:
-;; racket src/server-gen.rkt <rows> <cols> <density> [mode]
+;; racket .assets/src/server-gen.rkt <rows> <cols> <density> [mode]
 ;; This file connects command-line arguments with grid generation and A*.
-;; AI assistance was used to optimize and organize this helper code, which
-;; is outside the main functional A* implementation.
 ;;
 
 (require json
-         "../astar-implementation/astar.rkt"
+         "../../astar-implementation/astar.rkt"
          "grid-gen.rkt"
          "result-output.rkt")
 
