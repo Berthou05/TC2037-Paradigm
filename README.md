@@ -424,7 +424,7 @@ If Windows PowerShell blocks `npm`, replace it with `npm.cmd` in the same comman
 
 ---
 
-## 12. Alternative Paradigm: Concurrency
+# 12. Alternative Paradigm: Concurrency
 
 Another paradigm which could be used is concurrency. In a concurrent design, several agents or several independent path requests can be processed over the same grid during the same period of execution. This does not change the A* logic for one request. Each request still needs a start position, a goal position, a frontier, visited nodes, and parent links. What changes is how multiple requests are scheduled and how their results are collected.
 
@@ -643,6 +643,18 @@ The understanding and application of the functional paradigm was not only useful
 The complexity analysis and the alternative concurrency paradigm also helped me understand that a paradigm is not automatically better than another one. The functional version is useful for explaining one search clearly, because the algorithm can be followed through recursive calls and data passed between functions. A concurrent version would not make one individual A* search faster by itself, but it would be useful when several independent path requests need to be solved during the same execution. This distinction was important because it showed that the value of a paradigm depends on the problem being solved and on what part of the solution needs to improve.
 
 Moving forward, I am interested in researching more problems where heuristic algorithms and different programming paradigms can be connected, especially in cases where the result is not only judged by whether it works, but by how well it works compared to the best possible outcome. This project made me realize that changing a programming language or adding a visual interface is not the hardest part. The hardest part is changing the way I evaluate a solution, because a correct-looking result is not always enough evidence that the algorithm is behaving correctly.
+
+---
+
+# 16. Use of AI in the Project
+
+AI was used as a support tool throughout the project in three main areas.
+
+**Planning and writing.** At the start, AI helped break the project into clear parts: the A* implementation, the tests, the JSON conversion, and the visualizer. It also helped improve the wording of explanations and keep the terminology consistent with the code.
+
+**Building beyond the algorithm.** The visualizer and the connection between the Racket implementation and the web interface required coordinating several tools: Racket for the algorithm, JSON for the output, Node/Express for the API, and React for the interface. AI helped connect those parts while keeping the core A* logic separate from the support files and therefore adding value that made the project more comprehensive and honestly more appealing.
+
+**Debugging and verification.** AI helped catch path problems after reorganizing files, update test imports, verify that the README commands matched the actual project structure, and run consistency checks between the documentation and the code. This did not replace understanding the algorithm, but it made it possible to test more cases and present the project in a more complete way.
 
 # References
 
