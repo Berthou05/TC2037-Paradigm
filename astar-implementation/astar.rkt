@@ -1,7 +1,7 @@
 #lang racket
 
 ;;
-;; A* PATHFINDING — FUNCTIONAL IMPLEMENTATION
+;; A* PATHFINDING - FUNCTIONAL IMPLEMENTATION
 ;;
 ;; Finds the shortest path between two cells in a grid using the A* algorithm.
 ;; Movement is restricted to four directions: up, down, left, right.
@@ -60,10 +60,10 @@
 ;; RESULTS
 ;;
 ;; The search returns a result: (success visited path error).
-;;   success — true if a path was found
-;;   visited — all cells explored, in order
-;;   path    — the shortest path from start to goal
-;;   error   — an error message string, or false
+;;   success - true if a path was found
+;;   visited - all cells explored, in order
+;;   path    - the shortest path from start to goal
+;;   error   - an error message string, or false
 ;; ============================================================
 
 (define (result success visited path error) (list success visited path error))
@@ -281,10 +281,10 @@
 ;; A* SEARCH LOOP
 ;;
 ;; Each recursive call processes one node from the frontier:
-;;   1. Empty frontier → no path exists.
-;;   2. Already visited → skip and continue.
-;;   3. Goal reached → reconstruct and return the path.
-;;   4. Otherwise → expand neighbors and continue.
+;;   1. Empty frontier -> no path exists.
+;;   2. Already visited -> skip and continue.
+;;   3. Goal reached -> reconstruct and return the path.
+;;   4. Otherwise -> expand neighbors and continue.
 ;; ============================================================
 
 (define (search-from-frontier grid frontier visited-nodes goal)

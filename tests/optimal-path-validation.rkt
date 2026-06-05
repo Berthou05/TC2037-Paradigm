@@ -9,7 +9,7 @@
          (file "../.assets/src/grid-gen.rkt"))
 
 ;; ============================================================
-;; BFS — OPTIMAL PATH REFERENCE
+;; BFS - OPTIMAL PATH REFERENCE
 ;;
 ;; Returns the shortest path from start to goal as a list of
 ;; positions, or empty when no path exists.

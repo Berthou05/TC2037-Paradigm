@@ -73,7 +73,7 @@ A* fits the functional paradigm because the algorithm can be understood as a rep
 
 This way of thinking matches functional programming because the algorithm does not need to hide its progress inside an object with internal mutable state. The progress is visible in the data being passed from one function to another. One function validates positions, another generates neighbors, another calculates the heuristic, another selects the best node, and the recursive search connects those decisions into a complete process. The result is not only a working algorithm, but a solution whose reasoning can be followed from input to output.
 
-The functional paradigm is especially useful here because it supports clarity before optimization. A* can be implemented with more efficient data structures, such as a priority queue, but the first version uses a list for the frontier because that makes the logic easier to explain. This choice has a performance cost, which is analyzed later, but it also makes the algorithm more transparent: the reader can see how nodes are selected, how neighbors are added and how the final path is reconstructed.
+The functional paradigm is especially useful here because it supports clarity while still allowing better data structures. In this implementation, the frontier is a priority queue based on a leftist heap, so the algorithm can choose the lowest-scored node directly while keeping the search logic explicit.
 
 ---
 
@@ -313,7 +313,7 @@ flowchart TD
 
 ## 8.2 Function Call Flow
 
-``` mermaid
+```mermaid
 flowchart TD
     A["a-star"] --> B["valid-position?"]
     B --> C["inside-grid?"]
@@ -347,11 +347,11 @@ The file `tests/basic-scenarios.rkt` includes the base cases that are necessary 
 
 | Test case | What is checked | Expected result | Current result |
 | --- | --- | --- | --- |
-| Simple path | The sample grid has a route from `sample-start` to `sample-goal`. | `success` is true, the path starts at the start cell, ends at the goal cell, uses only walkable cells, and moves one cell at a time. | Passed. |
-| No solution | The goal is surrounded by obstacles. | `success` is false, `path` is empty, and the visited list begins from the start cell. | Passed. |
-| Start equals goal | The start and goal are both `(0 0)`. | `success` is true, `visited` is `((0 0))`, and `path` is `((0 0))`. | Passed. |
-| Invalid start | The start position is an obstacle. | `success` is false, `visited` is empty, and the error is `"Invalid start position"`. | Passed. |
-| Invalid goal | The goal position is outside the grid. | `success` is false, `visited` is empty, and the error is `"Invalid goal position"`. | Passed. |
+| Simple path | The sample grid has a route from `sample-start` to `sample-goal`. | `success` is true, `path` equals the expected shortest route, and `error` is false. | Passed. |
+| No solution | The goal is surrounded by obstacles. | `success` is false, `path` is empty, and `error` is false. | Passed. |
+| Start equals goal | The start and goal are both `(0 0)`. | `success` is true, `path` is `((0 0))`, and `error` is false. | Passed. |
+| Invalid start | The start position is an obstacle. | `success` is false, `path` is empty, and the error is `"Invalid start position"`. | Passed. |
+| Invalid goal | The goal position is outside the grid. | `success` is false, `path` is empty, and the error is `"Invalid goal position"`. | Passed. |
 
 ## 10.2 Algorithm Effectiveness Against the Optimal Result
 
@@ -369,6 +369,8 @@ The file calculates the optimal path in the same test file and checks only the o
 
 The effectiveness test includes five fixed cases and twelve generated grid cases. The generated cases use larger grids from `12x12` to `25x25`, different obstacle densities, solvable grids, blocked grids, and random grids. Each generated case uses a fixed seed, so the test runs several generated iterations while keeping the results repeatable.
 
+Because this validation compares A* against the perfect approach for these unweighted grids, passing all cases means the algorithm returned the same reachability result and the same path length as the optimal solver. In the current run, the algorithm completed all 17 effectiveness cases successfully: `17/17` tests passed.
+
 ## 10.3 Test Output
 
 From Linux, macOS, or any terminal where Racket is in `PATH`, the test commands are:
@@ -385,11 +387,11 @@ On my Windows setup, the same tests can also be run with the full Racket path:
 & "C:\Program Files\Racket\Racket.exe" -l raco test tests\optimal-path-validation.rkt
 ```
 
-The expected output is:
+When the full test directory is run with `raco test tests`, the output is:
 
 ```text
-5 tests passed
 All 17 tests passed
+5 tests passed
 ```
 
 Meaning that all base cases passed and all fixed and generated cases passed the optimality validation.
@@ -512,7 +514,6 @@ This organization keeps the concurrency paradigm focused on independent work. Th
 
 ---
 
-
 # 13. Complexity Analysis
 
 ## 13.1 Functional Implementation
@@ -545,84 +546,7 @@ hold up to V entries, and this check runs up to E times:
 | Operation | Cost |
 | --- | --- |
 | `position-already-visited?` | O(V) per call |
-| Called up to E times total | O(E · V) |
-
-This is the slowest part of the implementation. Which in foresight would be improved by using a hash table instead, which  would make each check O(1) and bring the total time down.
-
-### Path Reconstruction
-
-Once the goal is found, `reconstruct-path` and `visited-positions-in-order`
-each walk a list of at most V nodes once. This adds O(V) at the end and
-does not change the overall result.
-
-### Summary
-
-| Part | Time | Space |
-| --- | --- | --- |
-| Heap operations | O(E log E) | O(V) |
-| Visited check | O(E · V) | O(V) |
-| Path reconstruction | O(V) | O(V) |
-| **Overall** | **O(E · V)** | **O(V)** |
-
-The visited check is the bottleneck. 
-
-## 13.2 Concurrency
-
-Each individual search still costs O(E · V) because the algorithm is the
-same. The difference is that with R independent path requests running one
-after another, the total time is:
-
-```text
-O(R · E · V)
-```
-
-With T worker threads, those requests can run at the same time, so the total real world time is faster. But this does not make any single search faster. It means R searches can run in parallel instead of waiting for each other. The locks around the task
-queue and results list add a small overhead, but that cost is minor compared to the search itself.
-
-**Space per worker.** Each active worker keeps its own frontier, visited
-list, and parent links. With T workers running at the same time:
-
-| Part | Space |
-| --- | --- |
-| Shared grid | O(V) |
-| Each active worker | O(V) |
-| T active workers | O(T · V) |
-| Task queue and results | O(R) |
-| **Overall** | **O(T · V + R)** |
-
-# 13. Complexity Analysis
-
-## 13.1 Functional Implementation
-
-Let `V` be the number of free cells in the grid and `E` the number of valid
-moves between them.
-
-### Heap Operations
-
-The frontier is a leftist heap. Reading the best node with `best-node`
-costs O(1) because it is always at the root. Inserting and removing nodes
-both work by merging two heaps along their right side, which takes at most
-O(log F) steps where F is the current number of nodes in the frontier.
-Since at most one node is inserted per move:
-
-| Operation | Cost |
-| --- | --- |
-| `best-node` | O(1) |
-| `priority-queue-insert` | O(log E) |
-| `priority-queue-remove-min` | O(log E) |
-| Total heap work | O(E log E) |
-
-### Visited Check
-
-The visited list is a plain list. Every time the algorithm considers a
-neighbor, `position-already-visited?` walks the entire visited list from
-the start to check whether that position was already explored. The list can
-hold up to V entries, and this check runs up to E times:
-
-| Operation | Cost |
-| --- | --- |
-| `position-already-visited?` | O(V) per call |
-| Called up to E times total | O(E · V) |
+| Called up to E times total | O(E * V) |
 
 This is the slowest part of the implementation. Using a hash table instead
 of a list would make each check O(1) and bring the total time down to
@@ -630,37 +554,38 @@ O(E log E).
 
 ### Path Reconstruction
 
-Once the goal is found, `reconstruct-path` and `visited-positions-in-order`
-each walk a list of at most V nodes once. This adds O(V) at the end and
-does not change the overall result.
+Once the goal is found, `reconstruct-path` walks the parent links that form
+the final route, and `extract-positions-from-nodes` walks the visited nodes
+to build the reported visited-position list. Each walk is bounded by V, so
+this adds O(V) at the end and does not change the overall result.
 
 ### Summary
 
 | Part | Time | Space |
 | --- | --- | --- |
 | Heap operations | O(E log E) | O(V) |
-| Visited check | O(E · V) | O(V) |
+| Visited check | O(E * V) | O(V) |
 | Path reconstruction | O(V) | O(V) |
-| **Overall** | **O(E · V)** | **O(V)** |
+| **Overall** | **O(E * V)** | **O(V)** |
 
 The visited check is the bottleneck. Replacing the list with a hash table
 would remove it and bring the total time down to O(E log E).
 
 ## 13.2 Concurrency
 
-Each individual search still costs O(E · V) because the algorithm is the
+Each individual search still costs O(E * V) because the algorithm is the
 same. The difference is that with R independent path requests running one
 after another, the total time is:
 
 ```text
-O(R · E · V)
+O(R * E * V)
 ```
 
 With T worker threads, those requests can run at the same time, so the
 total wall-clock time becomes roughly:
 
 ```text
-O((R · E · V) / T)
+O((R * E * V) / T)
 ```
 
 This does not make any single search faster. It means R searches can run
@@ -675,9 +600,9 @@ list, and parent links. With T workers running at the same time:
 | --- | --- |
 | Shared grid | O(V) |
 | Each active worker | O(V) |
-| T active workers | O(T · V) |
+| T active workers | O(T * V) |
 | Task queue and results | O(R) |
-| **Overall** | **O(T · V + R)** |
+| **Overall** | **O(T * V + R)** |
 
 ---
 
